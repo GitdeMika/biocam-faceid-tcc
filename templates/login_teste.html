@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detecção Facial com MediaPipe</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+        #webcamContainer {
+            position: relative;
+            width: 80%;
+            max-width: 600px;
+        }
+        #video {
+            border: 2px solid #333;
+            width: 100%;
+        }
+        #outputCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none; /* Para que o canvas não interfira na interação com o vídeo */
+        }
+        #loginForm {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #loginForm input[type="email"],
+        #loginForm input[type="hidden"] {
+            margin: 10px;
+            padding: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+        #loginForm button {
+            padding: 10px;
+            width: 80%;
+            max-width: 300px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #loginForm button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <h1>Detecção Facial com MediaPipe</h1>
+
+    <div id="webcamContainer">
+        <video class="input_video" id="video" autoplay></video>
+        <canvas class="output_canvas" id="outputCanvas"></canvas>
+    </div>
+
+    <form id="loginForm" method="POST" action="{{ url_for('bp.login') }}">
+        <input type="email" name="email" placeholder="Digite seu email" required>
+        <input type="hidden" name="photo" id="photoData">
+        <button type="submit">Login</button>
+    </form>
+
+    <!-- Mediapipe solutions -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script type="module">
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('outputCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Inicializar o Face Detection do MediaPipe
+        const faceDetection = new FaceDetection.FaceDetection({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+            }
+        });
+
+        faceDetection.setOptions({
+            modelSelection: 1,
+            minDetectionConfidence: 0.5
+        });
+
+        // Função para desenhar os retângulos ao redor dos rostos detectados
+        function drawDetections(detections) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            detections.forEach(detection => {
+                const bbox = detection.boundingBox;
+                ctx.beginPath();
+                ctx.rect(bbox.xmin * canvas.width, bbox.ymin * canvas.height,
+                         (bbox.xmax - bbox.xmin) * canvas.width,
+                         (bbox.ymax - bbox.ymin) * canvas.height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'blue';
+                ctx.stroke();
+            });
+        }
+
+        // Função para processar os frames da webcam
+        async function processVideo() {
+            const results = await faceDetection.send({ image: video });
+            if (results.detections) {
+                drawDetections(results.detections);
+            }
+            requestAnimationFrame(processVideo);
+        }
+
+        // Acessar a webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+                video.play();
+                video.addEventListener('loadedmetadata', () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                });
+            })
+            .catch(err => {
+                console.error("Erro ao acessar a webcam: ", err);
+            });
+
+        // Iniciar o processamento de vídeo
+        processVideo();
+
+        // Capturar imagem da webcam e codificá-la em base64
+        function captureImage() {
+            const canvasCapture = document.createElement('canvas');
+            canvasCapture.width = video.videoWidth;
+            canvasCapture.height = video.videoHeight;
+            const ctxCapture = canvasCapture.getContext('2d');
+            ctxCapture.drawImage(video, 0, 0, canvasCapture.width, canvasCapture.height);
+            const dataURL = canvasCapture.toDataURL('image/png');
+            document.getElementById('photoData').value = dataURL; // Armazenar a imagem em base64 no input hidden
+        }
+
+        // Captura a imagem quando o formulário é enviado
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            captureImage();
+        });
+    </script>
+</body>
+</html>

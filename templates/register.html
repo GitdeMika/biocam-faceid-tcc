@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Registrar</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <style>
+        .fade-out {
+            animation: fadeOut 2s forwards;
+        }
+
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .webcam-container {
+            position: relative;
+            width: 320px;
+            height: 240px;
+        }
+
+        #video {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        #overlay {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Registrar</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="name">Nome:</label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Endereço de email</label>
+                <input type="text" class="form-control" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <div class="form-group d-flex flex-column align-items-center">
+                <div class="webcam-container">
+                    <video id="video" width="320" height="240" autoplay></video>
+                    <canvas id="overlay" width="320" height="240"></canvas>
+                </div>
+                <canvas id="canvas" style="display: none;"></canvas>
+                <button type="button" class="btn btn-primary mt-2" onclick="captureImage()">Capturar Foto</button>
+                <input type="hidden" id="captured-image" name="photo">
+                <div id="capture-success" class="alert alert-success mt-2" style="display: none;">
+                    Imagem capturada com sucesso!
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Registrar</button>
+        </form>
+    </div>
+
+    <script>
+        var video = document.getElementById('video');
+        var canvas = document.getElementById('canvas');
+        var overlay = document.getElementById('overlay');
+        var context = canvas.getContext('2d');
+        var overlayCtx = overlay.getContext('2d');
+        var captureSuccessDiv = document.getElementById('capture-success');
+        var model = null;
+        var isCapturing = false;
+
+        // Carregar o modelo BlazeFace
+        async function loadModel() {
+            model = await blazeface.load();
+            console.log('Modelo carregado');
+        }
+
+        // Iniciar a webcam
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: 320,
+                    height: 240
+                }
+            });
+            video.srcObject = stream;
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        // Função principal para detecção
+        async function detectFaces() {
+            if (!model || isCapturing) return;
+
+            const predictions = await model.estimateFaces(video, false);
+
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+            if (predictions.length > 0) {
+                predictions.forEach(prediction => {
+                    const start = prediction.topLeft;
+                    const end = prediction.bottomRight;
+                    const size = [end[0] - start[0], end[1] - start[1]];
+
+                    overlayCtx.strokeStyle = '#00ff00';
+                    overlayCtx.lineWidth = 2;
+                    overlayCtx.strokeRect(
+                        start[0],
+                        start[1],
+                        size[0],
+                        size[1]
+                    );
+                });
+            }
+
+            requestAnimationFrame(detectFaces);
+        }
+
+        // Inicializar tudo
+        async function init() {
+            await setupCamera();
+            await loadModel();
+            detectFaces();
+        }
+
+        function captureImage() {
+            isCapturing = true;  // Impede a detecção de face durante a captura
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);  // Limpa o overlay
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Capturar apenas o vídeo, sem o overlay
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            var dataURL = canvas.toDataURL('image/jpeg');
+            document.getElementById('captured-image').value = dataURL;
+
+            captureSuccessDiv.style.display = 'block';
+            captureSuccessDiv.classList.remove('fade-out');
+            setTimeout(function() {
+                captureSuccessDiv.classList.add('fade-out');
+                isCapturing = false;  // Reativa a detecção de face
+            }, 0);
+            setTimeout(function() {
+                captureSuccessDiv.style.display = 'none';
+                captureSuccessDiv.classList.remove('fade-out');
+            }, 2000);
+        }
+
+        // Iniciar a aplicação
+        init();
+    </script>
+</body>
+</html>

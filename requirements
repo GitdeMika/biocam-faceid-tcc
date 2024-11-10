@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+pymysql
+opencv-python
+mediapipe
+deepface
+bcrypt
+cryptography
+tf-keras

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login com Reconhecimento Facial</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+            font-family: Arial, sans-serif;
+        }
+        #webcamContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            width: 80%;
+            max-width: 600px;
+        }
+        video {
+            border: 2px solid #333;
+            width: 80%;
+            max-width: 600px;
+        }
+        #outputCanvas {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 0;
+            z-index: 1;
+        }
+        #loginForm {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #loginForm input[type="email"] {
+            margin: 10px;
+            padding: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+        #loginForm input[type="hidden"] {
+            margin: 10px;
+            padding: 10px;
+            width: 80%;
+            max-width: 600px;
+        }
+        #loginForm button {
+            padding: 10px;
+            width: 80%;
+            max-width: 300px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #loginForm button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <h1>Faça login para continuar</h1>
+    <div class="webcamContainer">
+        <video id="video" autoplay></video>
+        <canvas id="outputCanvas"></canvas>
+    </div>
+
+    <form id="loginForm" method="POST" action="{{ url_for('bp.login') }}">
+        <input type="email" name="email" placeholder="Digite seu email" required>
+        <input type="hidden" name="photo" id="photoData">
+        <button type="submit">Login</button>
+    </form>
+    <a href="{{url_for('bp.index')}}">Voltar</a>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('outputCanvas');
+        const photoDataInput = document.getElementById('photoData');
+        const ctx = canvas.getContext('2d');
+        let model = null;
+
+        // Configurar dimensões do canvas para corresponder ao vídeo
+        function setupCanvasDimensions() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        // Carregar o modelo BlazeFace
+        async function loadModel() {
+            model = await blazeface.load();
+            console.log('Modelo de detecção facial carregado');
+        }
+
+        // Inicializar webcam
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: 600,
+                    height: 450
+                }
+            });
+            video.srcObject = stream;
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    setupCanvasDimensions();
+                    resolve(video);
+                };
+            });
+        }
+
+        // Função para desenhar landmarks
+        function drawLandmark(ctx, x, y, radius = 2) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+        }
+
+        // Função de detecção facial e landmarks
+        async function detectFaces() {
+            if (!model) return;
+
+            const predictions = await model.estimateFaces(video, false);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (predictions.length > 0) {
+                predictions.forEach(prediction => {
+                    // Desenhar retângulo da face
+                    const start = prediction.topLeft;
+                    const end = prediction.bottomRight;
+                    const size = [end[0] - start[0], end[1] - start[1]];
+
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(
+                        start[0],
+                        start[1],
+                        size[0],
+                        size[1]
+                    );
+
+                    // Desenhar landmarks
+                    const landmarks = prediction.landmarks;
+                    // Olhos
+                    drawLandmark(ctx, landmarks[0][0], landmarks[0][1]); // Olho direito
+                    drawLandmark(ctx, landmarks[1][0], landmarks[1][1]); // Olho esquerdo
+                    // Orelhas
+                    drawLandmark(ctx, landmarks[2][0], landmarks[2][1]); // Orelha direita
+                    drawLandmark(ctx, landmarks[3][0], landmarks[3][1]); // Orelha esquerda
+                    // Nariz
+                    drawLandmark(ctx, landmarks[4][0], landmarks[4][1]);
+                    // Boca
+                    drawLandmark(ctx, landmarks[5][0], landmarks[5][1]); // Canto direito
+
+                    // Conectar landmarks com linhas
+                    ctx.beginPath();
+                    ctx.moveTo(landmarks[0][0], landmarks[0][1]); // Olho direito
+                    ctx.lineTo(landmarks[1][0], landmarks[1][1]); // para olho esquerdo
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    // Linha do nariz
+                    ctx.beginPath();
+                    ctx.moveTo(landmarks[4][0], landmarks[4][1]); // Do nariz
+                    ctx.lineTo(landmarks[5][0], landmarks[5][1]); // até a boca
+                    ctx.stroke();
+                });
+            }
+
+            requestAnimationFrame(detectFaces);
+        }
+
+        // Capturar imagem da webcam com o retângulo e landmarks
+        function captureImage() {
+            const captureCanvas = document.createElement('canvas');
+            captureCanvas.width = video.videoWidth;
+            captureCanvas.height = video.videoHeight;
+            const captureCtx = captureCanvas.getContext('2d');
+
+            // Desenhar o vídeo
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+
+            // Desenhar o canvas de detecção facial (com retângulo e landmarks)
+            captureCtx.drawImage(canvas, 0, 0);
+
+            const dataURL = captureCanvas.toDataURL('image/png');
+            photoDataInput.value = dataURL;
+        }
+
+        // Inicializar tudo
+        async function init() {
+            await setupCamera();
+            await loadModel();
+            detectFaces();
+        }
+
+        // Event listener para o formulário
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            captureImage();
+        });
+
+        // Iniciar a aplicação
+        init();
+    </script>
+</body>
+</html>

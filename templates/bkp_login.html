@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login com Reconhecimento Facial</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+            font-family: Arial, sans-serif;
+        }
+        #webcamContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            width: 80%;
+            max-width: 600px;
+        }
+        video {
+            border: 2px solid #333;
+            width: 80%;
+            max-width: 600px;
+        }
+        #loginForm {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #loginForm input[type="email"] {
+            margin: 10px;
+            padding: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+        #loginForm input[type="hidden"] {
+            margin: 10px;
+            padding: 10px;
+            width: 80%;
+            max-width: 600px;
+        }
+        #loginForm button {
+            padding: 10px;
+            width: 80%;
+            max-width: 300px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #loginForm button:hover {
+            background-color: #218838;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <h1>Faça login com para continuar</h1>
+    <div class="webcamContainer">
+        <video class="input_video" id="video" autoplay></video>
+        <canvas class="output_canvas" id="outputCanvas"></canvas>
+    </div>
+
+
+    <form id="loginForm" method="POST" action="{{ url_for('bp.login') }}">
+        <input type="email" name="email" placeholder="Digite seu email" required>
+        <input type="hidden" name="photo" id="photoData">
+        <button type="submit">Login</button>
+    </form>
+    <a href="{{url_for('bp.index')}}">Voltar </a>
+    <!-- Mediapipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <script>
+       const video = document.getElementById('video');
+       const photoDataInput = document.getElementById('photoData');
+
+        // Acessar a webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+                video.play();
+            })
+            .catch(err => {
+                console.error("Erro ao acessar a webcam: ", err);
+            });
+
+
+        // Capturar imagem da webcam e codificá-la em base64
+        function captureImage() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataURL = canvas.toDataURL('image/png');
+            photoDataInput.value = dataURL; // Armazenar a imagem em base64 no input hidden
+        }
+
+        // Captura a imagem quando o formulário é enviado
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            captureImage();
+        });
+
+
+         // Adicionar um temporizador para remover a classe "show" após 2 segundos
+        /*const flashMessages = document.getElementById('flashMessages');
+        if (flashMessages) {
+            setTimeout(function() {
+                flashMessages.classList.remove('show');
+            }, 3000);
+        }*/
+    </script>
+     <script src="{{url_for('static', filename='js/face-detection.js')}}"></script>
+</body>
+</html>

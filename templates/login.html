@@ -49,12 +49,6 @@
             width: 100%;
             max-width: 600px;
         }
-        #loginForm input[type="hidden"] {
-            margin: 10px;
-            padding: 10px;
-            width: 80%;
-            max-width: 600px;
-        }
         #loginForm button {
             padding: 10px;
             width: 80%;
@@ -67,6 +61,30 @@
         #loginForm button:hover {
             background-color: #218838;
         }
+        #loginForm button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .error-message {
+            color: #dc3545;
+            margin: 10px 0;
+            text-align: center;
+            display: none;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -76,10 +94,13 @@
         <canvas id="outputCanvas"></canvas>
     </div>
 
+    <div id="errorMessage" class="error-message"></div>
+    <div id="loadingSpinner" class="loading-spinner"></div>
+
     <form id="loginForm" method="POST" action="{{ url_for('bp.login') }}">
         <input type="email" name="email" placeholder="Digite seu email" required>
         <input type="hidden" name="photo" id="photoData">
-        <button type="submit">Login</button>
+        <button type="submit" id="submitButton">Login</button>
     </form>
     <a href="{{url_for('bp.index')}}">Voltar</a>
 
@@ -88,35 +109,97 @@
         const canvas = document.getElementById('outputCanvas');
         const photoDataInput = document.getElementById('photoData');
         const ctx = canvas.getContext('2d');
+        const errorMessage = document.getElementById('errorMessage');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const submitButton = document.getElementById('submitButton');
         let model = null;
+        let faceDetected = false;
 
-        // Configurar dimensões do canvas para corresponder ao vídeo
+        // Configurar dimensões do canvas
         function setupCanvasDimensions() {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
         }
 
-        // Carregar o modelo BlazeFace
-        async function loadModel() {
-            model = await blazeface.load();
-            console.log('Modelo de detecção facial carregado');
+        // Mostrar mensagem de erro
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 3000);
         }
 
-        // Inicializar webcam
-        async function setupCamera() {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: 600,
-                    height: 450
-                }
-            });
-            video.srcObject = stream;
+        // Carregar o modelo BlazeFace
+        async function loadModel() {
+            try {
+                loadingSpinner.style.display = 'block';
+                model = await blazeface.load();
+                console.log('Modelo de detecção facial carregado');
+            } catch (error) {
+                showError('Erro ao carregar o modelo de detecção facial');
+                console.error(error);
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
+        }
 
-            return new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    setupCanvasDimensions();
-                    resolve(video);
+        // Inicializar webcam com tratamento de erros
+        async function setupCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: "user"
+                    }
                 };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        setupCanvasDimensions();
+                        resolve(video);
+                    };
+                });
+            } catch (error) {
+                showError('Erro ao acessar a câmera. Verifique as permissões.');
+                console.error(error);
+            }
+        }
+
+        // Função para otimizar a imagem
+        function optimizeImage(dataUrl) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const maxWidth = 800;
+                    const maxHeight = 600;
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Redimensionar mantendo a proporção
+                    if (width > maxWidth) {
+                        height = Math.round(height * (maxWidth / width));
+                        width = maxWidth;
+                    }
+                    if (height > maxHeight) {
+                        width = Math.round(width * (maxHeight / height));
+                        height = maxHeight;
+                    }
+
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = width;
+                    tempCanvas.height = height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(img, 0, 0, width, height);
+
+                    // Comprimir a imagem
+                    resolve(tempCanvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.src = dataUrl;
             });
         }
 
@@ -128,93 +211,106 @@
             ctx.fill();
         }
 
-        // Função de detecção facial e landmarks
+        // Função de detecção facial e landmarks com validações
         async function detectFaces() {
             if (!model) return;
 
-            const predictions = await model.estimateFaces(video, false);
+            try {
+                const predictions = await model.estimateFaces(video, false);
 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                faceDetected = predictions.length === 1;
+                submitButton.disabled = !faceDetected;
 
-            if (predictions.length > 0) {
-                predictions.forEach(prediction => {
-                    // Desenhar retângulo da face
-                    const start = prediction.topLeft;
-                    const end = prediction.bottomRight;
-                    const size = [end[0] - start[0], end[1] - start[1]];
+                if (predictions.length > 1) {
+                    showError('Apenas uma face deve estar visível');
+                } else if (predictions.length === 0) {
+                    showError('Nenhuma face detectada');
+                } else {
+                    predictions.forEach(prediction => {
+                        // Validar posição da face
+                        const face = prediction.topLeft;
+                        const size = [
+                            prediction.bottomRight[0] - prediction.topLeft[0],
+                            prediction.bottomRight[1] - prediction.topLeft[1]
+                        ];
 
-                    ctx.strokeStyle = '#00ff00';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(
-                        start[0],
-                        start[1],
-                        size[0],
-                        size[1]
-                    );
+                        // Verificar se a face está centralizada
+                        const centerX = face[0] + size[0] / 2;
+                        const centerY = face[1] + size[1] / 2;
+                        const canvasCenter = canvas.width / 2;
 
-                    // Desenhar landmarks
-                    const landmarks = prediction.landmarks;
-                    // Olhos
-                    drawLandmark(ctx, landmarks[0][0], landmarks[0][1]); // Olho direito
-                    drawLandmark(ctx, landmarks[1][0], landmarks[1][1]); // Olho esquerdo
-                    // Orelhas
-                    drawLandmark(ctx, landmarks[2][0], landmarks[2][1]); // Orelha direita
-                    drawLandmark(ctx, landmarks[3][0], landmarks[3][1]); // Orelha esquerda
-                    // Nariz
-                    drawLandmark(ctx, landmarks[4][0], landmarks[4][1]);
-                    // Boca
-                    drawLandmark(ctx, landmarks[5][0], landmarks[5][1]); // Canto direito
+                        if (Math.abs(centerX - canvasCenter) > 100) {
+                            showError('Centralize seu rosto');
+                            faceDetected = false;
+                        }
 
-                    // Conectar landmarks com linhas
-                    ctx.beginPath();
-                    ctx.moveTo(landmarks[0][0], landmarks[0][1]); // Olho direito
-                    ctx.lineTo(landmarks[1][0], landmarks[1][1]); // para olho esquerdo
-                    ctx.strokeStyle = '#ff0000';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
+                        // Desenhar retângulo e landmarks
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(face[0], face[1], size[0], size[1]);
 
-                    // Linha do nariz
-                    ctx.beginPath();
-                    ctx.moveTo(landmarks[4][0], landmarks[4][1]); // Do nariz
-                    ctx.lineTo(landmarks[5][0], landmarks[5][1]); // até a boca
-                    ctx.stroke();
-                });
+                        const landmarks = prediction.landmarks;
+                        landmarks.forEach(point => {
+                            drawLandmark(ctx, point[0], point[1]);
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error('Erro na detecção facial:', error);
             }
 
             requestAnimationFrame(detectFaces);
         }
 
-        // Capturar imagem da webcam com o retângulo e landmarks
-        function captureImage() {
+        // Capturar e otimizar imagem
+        async function captureImage() {
+            if (!faceDetected) {
+                showError('Posicione seu rosto corretamente antes de continuar');
+                return false;
+            }
+
             const captureCanvas = document.createElement('canvas');
             captureCanvas.width = video.videoWidth;
             captureCanvas.height = video.videoHeight;
             const captureCtx = captureCanvas.getContext('2d');
 
-            // Desenhar o vídeo
-            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-
-            // Desenhar o canvas de detecção facial (com retângulo e landmarks)
+            captureCtx.drawImage(video, 0, 0);
             captureCtx.drawImage(canvas, 0, 0);
 
-            const dataURL = captureCanvas.toDataURL('image/png');
-            photoDataInput.value = dataURL;
-        }
-
-        // Inicializar tudo
-        async function init() {
-            await setupCamera();
-            await loadModel();
-            detectFaces();
+            try {
+                const optimizedDataUrl = await optimizeImage(captureCanvas.toDataURL('image/jpeg'));
+                photoDataInput.value = optimizedDataUrl;
+                return true;
+            } catch (error) {
+                showError('Erro ao processar a imagem');
+                console.error(error);
+                return false;
+            }
         }
 
         // Event listener para o formulário
-        document.getElementById('loginForm').addEventListener('submit', function(event) {
-            captureImage();
+        document.getElementById('loginForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            loadingSpinner.style.display = 'block';
+            submitButton.disabled = true;
+
+            if (await captureImage()) {
+                this.submit();
+            } else {
+                loadingSpinner.style.display = 'none';
+                submitButton.disabled = false;
+            }
         });
 
         // Iniciar a aplicação
         init();
+
+        async function init() {
+            await loadModel();
+            await setupCamera();
+            detectFaces();
+        }
     </script>
 </body>
 </html>

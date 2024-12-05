@@ -1,14 +1,18 @@
-# Dockerfile
+# Use uma imagem base, como o Python
 FROM python:3.9-slim
 
+# Instale dependências do sistema (se necessário)
+RUN apt-get update && apt-get install -y libpq-dev
+
+# Crie e defina o diretório de trabalho
 WORKDIR /app
 
-COPY ./requirements.txt .
-COPY . .
+# Copie os arquivos para o contêiner
+COPY . /app
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Instale dependências do projeto
+RUN pip install -r requirements.txt
 
-EXPOSE 5000
-
-CMD ["python", "app.py"]
+# Defina o comando de inicialização
+CMD ["python", "site.py"]
 

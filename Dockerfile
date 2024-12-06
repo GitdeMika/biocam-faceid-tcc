@@ -14,5 +14,5 @@ COPY . /app
 RUN pip install -r requirements.txt
 
 # Defina o comando de inicialização
-CMD ["python", "site.py"]
+CMD ["python", "app.py"]
 
